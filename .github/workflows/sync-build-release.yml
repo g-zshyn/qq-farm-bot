@@ -1,0 +1,255 @@
+name: Sync upstream, build and release
+
+on:
+  schedule:
+    - cron: '0 1 * * *'   # UTC 01:00 = 北京时间 09:00
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: '强制构建当前代码（忽略版本判断）'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-build-release
+  cancel-in-progress: false
+
+env:
+  UPSTREAM: https://github.com/liyangpengs/qq-farm-bot.git
+  UPSTREAM_BRANCH: master
+  DIGEST_MIN_COMMITS: '10'
+
+jobs:
+  sync:
+    name: sync-upstream
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.sync.outputs.changed }}
+      before: ${{ steps.sync.outputs.before }}
+      build: ${{ steps.detect.outputs.build }}
+      digest: ${{ steps.detect.outputs.digest }}
+      version: ${{ steps.detect.outputs.version }}
+      sha: ${{ steps.detect.outputs.sha }}
+      notes: ${{ steps.detect.outputs.notes }}
+      summary: ${{ steps.detect.outputs.summary }}
+      runtime_commits: ${{ steps.detect.outputs.runtime_commits }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: merge-upstream
+        id: sync
+        env:
+          FORCE: ${{ inputs.force_build }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream "$UPSTREAM" 2>/dev/null || true
+          git fetch upstream "$UPSTREAM_BRANCH" --quiet
+          UP=$(git rev-parse "upstream/$UPSTREAM_BRANCH")
+          if git merge-base --is-ancestor "$UP" HEAD; then
+            if [ "${FORCE:-}" = "true" ]; then
+              echo "before=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "upstream is already merged"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "before=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          git merge --no-edit "$UP"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
+
+      - name: classify-changes
+        id: detect
+        if: steps.sync.outputs.changed == 'true'
+        env:
+          FORCE: ${{ inputs.force_build }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          BEFORE="${{ steps.sync.outputs.before }}"
+          FILES=$(git diff --name-only "$BEFORE" HEAD || true)
+          CUR=$(node -p "require('./core/package.json').version")
+          SHA=$(git rev-parse --short=7 HEAD)
+
+          PREV_TAG=$(gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=1" --jq '.[0].tag_name // ""' 2>&1 || true)
+          PREV_VER=$(printf '%s' "$PREV_TAG" | sed -nE 's/^v([0-9]+)-[0-9a-f]+$/\1/p')
+          PREV_SHA=$(printf '%s' "$PREV_TAG" | sed -nE 's/^v[0-9]+-([0-9a-f]+)$/\1/p')
+
+          if [ -n "$PREV_SHA" ] && git cat-file -e "${PREV_SHA}^{commit}" 2>/dev/null; then
+            RT=$(git rev-list --count "${PREV_SHA}..HEAD" -- core/src web/src core/client.ts || echo 0)
+          else
+            RT=0
+          fi
+
+          BUILD=false
+          DIGEST=false
+          if [ "$CUR" != "${PREV_VER:-}" ]; then
+            BUILD=true
+            REASON="发版 ${CUR}"
+          elif [ "${FORCE:-}" = "true" ]; then
+            BUILD=true
+            REASON="手动构建"
+          elif [ "$RT" -ge "${DIGEST_MIN_COMMITS:-10}" ]; then
+            DIGEST=true
+            REASON="未发版修复 ${RT} 个"
+          else
+            REASON="无变化"
+          fi
+
+          # 变更摘要：提交列表
+          COMMITS=$(git log --format='- %h %s' --no-merges "$BEFORE"..HEAD | head -12)
+          if [ -z "$COMMITS" ]; then
+            COMMITS="_无上游变更_"
+          fi
+          FILE_LIST=$(printf '%s\n' "$FILES" | head -20)
+          if [ -z "$FILE_LIST" ]; then
+            FILE_LIST="_无_"
+          fi
+
+          CHANGELOG=$(printf '%s\n' "$COMMITS" | head -6)
+
+          echo "build=$BUILD" >> "$GITHUB_OUTPUT"
+          echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+          echo "runtime_commits=$RT" >> "$GITHUB_OUTPUT"
+          echo "version=$CUR" >> "$GITHUB_OUTPUT"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "summary=$REASON" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "notes<<NOTES_EOF"
+            echo "## ${CUR} · ${SHA}"
+            echo ""
+            echo "| 项目 | 内容 |"
+            echo "| --- | --- |"
+            echo "| 版本 | ${CUR} |"
+            echo "| 提交 | \`${SHA}\` |"
+            echo "| 触发 | ${REASON} |"
+            echo ""
+            echo "### 变更"
+            echo ""
+            printf '%s\n' "$COMMITS"
+            echo ""
+            echo "### 文件"
+            echo ""
+            printf '%s\n' "$FILE_LIST"
+            echo "NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: notify-digest
+        if: steps.detect.outputs.digest == 'true' && steps.sync.outputs.changed == 'true'
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          COUNT: ${{ steps.detect.outputs.runtime_commits }}
+          SUMMARY: ${{ steps.detect.outputs.summary }}
+          NOTES: ${{ steps.detect.outputs.notes }}
+        run: |
+          if [ -z "${BOT_TOKEN:-}" ]; then exit 0; fi
+          LINK="${{ github.server_url }}/${{ github.repository }}/actions/workflows/sync-build-release.yml"
+          CHANGES=$(printf '%s\n' "$NOTES" | sed -n '/### 变更/,/### 文件/p' | sed '1d;$d' | grep -E '^- ' | head -6 || true)
+          TEXT=$(printf '%s\n\n%s\n\n手动构建: %s' "$SUMMARY" "$CHANGES" "$LINK")
+          curl -sS --fail-with-body -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${CHAT_ID}" \
+            --data-urlencode "text=${TEXT}" \
+            --data-urlencode "disable_web_page_preview=true" > /dev/null
+
+  build:
+    name: build-and-release
+    needs: sync
+    if: needs.sync.outputs.changed == 'true' && needs.sync.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: install-deps
+        run: pnpm install --frozen-lockfile
+
+      - name: build
+        run: pnpm build
+
+      - name: package
+        run: bash scripts/package-armv7.sh
+
+      - name: create-release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTES: ${{ needs.sync.outputs.notes }}
+          VERSION: ${{ needs.sync.outputs.version }}
+          SHA: ${{ needs.sync.outputs.sha }}
+        run: |
+          set -euo pipefail
+          TAG="v${VERSION}-${SHA}"
+          printf '%s\n' "$NOTES" > /tmp/release-notes.md
+          SIZE=$(du -h dist-pkg/*.tar.gz | cut -f1)
+          gh release delete "$TAG" -y --cleanup-tag 2>/dev/null || true
+          gh release create "$TAG" dist-pkg/*.tar.gz --title "${VERSION} (${SHA})" --notes-file /tmp/release-notes.md
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "size=$SIZE" >> "$GITHUB_OUTPUT"
+
+      - name: prune-old-releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        continue-on-error: true
+        run: |
+          gh api "repos/${GITHUB_REPOSITORY}/releases?per_page=100" --jq '.[].tag_name' | tail -n +6 | while read -r t; do
+            gh release delete "$t" -y --cleanup-tag || true
+          done
+          echo "pruned"
+
+      - name: notify-telegram
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          VERSION: ${{ needs.sync.outputs.version }}
+          SHA: ${{ needs.sync.outputs.sha }}
+          SUMMARY: ${{ needs.sync.outputs.summary }}
+          NOTES: ${{ needs.sync.outputs.notes }}
+          SIZE: ${{ steps.release.outputs.size }}
+        run: |
+          set -euo pipefail
+          if [ -z "${BOT_TOKEN:-}" ]; then exit 0; fi
+          LINK="https://github.com/${{ github.repository }}/releases/tag/v${VERSION}-${SHA}"
+          CHANGES=$(printf '%s\n' "$NOTES" | sed -n '/### 变更/,/### 文件/p' | sed '1d;$d' | grep -E '^- ' | head -6 || true)
+          if [ -z "$CHANGES" ]; then CHANGES="（本次无上游变更）"; fi
+          TEXT=$(printf '%s · %s 已构建\n\n%s\n\n%s\n%s' "$VERSION" "$SHA" "$SUMMARY" "$CHANGES" "$LINK")
+          curl -sS --fail-with-body -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${CHAT_ID}" \
+            --data-urlencode "text=${TEXT}" \
+            --data-urlencode "disable_web_page_preview=false" > /dev/null
+          echo "telegram sent"
+
+  notify-failure:
+    name: notify-failure
+    needs: [sync, build]
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - name: notify-telegram
+        env:
+          BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ -z "${BOT_TOKEN:-}" ]; then exit 0; fi
+          TEXT=$(printf '构建失败\n%s/actions/runs/%s' "${{ github.server_url }}/${{ github.repository }}" "${{ github.run_id }}")
+          curl -sS --fail-with-body -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${CHAT_ID}" \
+            --data-urlencode "text=${TEXT}" > /dev/null || true
