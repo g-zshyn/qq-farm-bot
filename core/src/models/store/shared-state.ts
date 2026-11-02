@@ -21,7 +21,8 @@ const PUSHOO_CHANNELS: Set<string> = new Set([
 ]);
 
 const DEFAULT_FERTILIZER_LAND_TYPES: FertilizerLandType[] = ['purple-gold', 'gold', 'black', 'red', 'normal'];
-const FERTILIZER_LAND_TYPE_SET: Set<string> = new Set(DEFAULT_FERTILIZER_LAND_TYPES);
+const ALL_FERTILIZER_LAND_TYPES: FertilizerLandType[] = ['blue-crystal', ...DEFAULT_FERTILIZER_LAND_TYPES];
+const FERTILIZER_LAND_TYPE_SET: Set<string> = new Set(ALL_FERTILIZER_LAND_TYPES);
 const INTERVAL_MAX_SEC: number = 86400;
 const DEFAULT_KNOWN_FRIEND_GID_SYNC_COOLDOWN_SEC: number = 300;
 const DEFAULT_FRIENDS_LIST_CACHE_TTL_SEC: number = 60;
@@ -48,6 +49,7 @@ const DEFAULT_LOGIN_SETTINGS: LoginSettings = {
 const DEFAULT_ACCOUNT_CONFIG: AccountConfig = {
     automation: {
         farm: true,
+        farm_harvest_tiangong: true,
         farm_push: true,
         land_upgrade: true,
         friend: true,
@@ -202,7 +204,7 @@ function normalizeBagSeedLandTypes(input: unknown): Record<string, FertilizerLan
             if (types.includes(type as FertilizerLandType)) continue;
             types.push(type as FertilizerLandType);
         }
-        if (types.length === 0 || types.length === DEFAULT_FERTILIZER_LAND_TYPES.length) continue;
+        if (types.length === 0 || types.length === ALL_FERTILIZER_LAND_TYPES.length) continue;
         normalized[String(seedId)] = types;
     }
     return normalized;

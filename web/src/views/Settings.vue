@@ -21,6 +21,7 @@ import { useStatusStore } from '@/stores/status'
 import { useUserStore } from '@/stores/user'
 
 const fertilizerLandTypeOptions = [
+  { label: '蓝晶土地', value: 'blue-crystal' },
   { label: '紫金土地', value: 'purple-gold' },
   { label: '金土地', value: 'gold' },
   { label: '黑土地', value: 'black' },
@@ -842,10 +843,11 @@ watch(() => [
 })
 
 // ==================== 自动控制 ====================
-const allFertilizerLandTypes = ['purple-gold', 'gold', 'black', 'red', 'normal']
+const allFertilizerLandTypes = ['blue-crystal', 'purple-gold', 'gold', 'black', 'red', 'normal']
+const defaultFertilizerLandTypes = allFertilizerLandTypes.filter(type => type !== 'blue-crystal')
 
 function normalizeFertilizerLandTypes(input: unknown) {
-  const source = Array.isArray(input) ? input : allFertilizerLandTypes
+  const source = Array.isArray(input) ? input : defaultFertilizerLandTypes
   const normalized: string[] = []
   for (const item of source) {
     const value = String(item || '').trim().toLowerCase()
@@ -861,6 +863,7 @@ function normalizeFertilizerLandTypes(input: unknown) {
 const localAutomationSettings = ref({
   automation: {
     farm: false,
+    farm_harvest_tiangong: true,
     task: false,
     sell: true,
     friend: false,
@@ -885,7 +888,7 @@ const localAutomationSettings = ref({
     fertilizer: 'normal',
     skip_own_weed_bug: false,
     fertilizer_multi_season: false,
-    fertilizer_land_types: [...allFertilizerLandTypes],
+    fertilizer_land_types: [...defaultFertilizerLandTypes],
     fertilizer_smart_seconds: 300,
     show_manual_fertilizer: true,
   },
@@ -914,6 +917,7 @@ function syncLocalAutomationSettings() {
     if (!settings.value.automation) {
       localAutomationSettings.value.automation = {
         farm: false,
+        farm_harvest_tiangong: true,
         task: false,
         sell: false,
         friend: false,
@@ -946,6 +950,7 @@ function syncLocalAutomationSettings() {
     else {
       const defaults = {
         farm: false,
+        farm_harvest_tiangong: true,
         task: false,
         sell: false,
         friend: false,
@@ -1466,12 +1471,12 @@ async function handleResetSystemConfig() {
   <div class="settings-page page-stack">
     <div class="settings-content">
       <PageTabs :value="activeTab" @update:value="setActiveTab">
-          <NTab v-for="tab in tabs" :key="tab.key" :name="tab.key">
-            <span class="inline-flex items-center gap-2">
-              <span :class="tab.icon" />
-              {{ tab.label }}
-            </span>
-          </NTab>
+        <NTab v-for="tab in tabs" :key="tab.key" :name="tab.key">
+          <span class="inline-flex items-center gap-2">
+            <span :class="tab.icon" />
+            {{ tab.label }}
+          </span>
+        </NTab>
       </PageTabs>
 
       <div class="settings-body">
@@ -1554,7 +1559,7 @@ async function handleResetSystemConfig() {
                     <div class="mt-0.5 flex flex-wrap items-center gap-1.5">
                       <span
                         v-if="acc.platform"
-                        class="rounded px-1.5 py-0.5 text-[10px] font-medium leading-tight"
+                        class="rounded px-1.5 py-0.5 text-[10px] leading-tight font-medium"
                         :class="getPlatformClass(acc.platform)"
                       >
                         {{ getPlatformLabel(acc.platform) }}

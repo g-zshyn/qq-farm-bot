@@ -7,6 +7,7 @@ import CommerceItemImage from './CommerceItemImage.vue'
 const props = defineProps<{
   open: boolean
   goods: MallGoodsDto | null
+  limitLabel?: string
   pending?: boolean
 }>()
 
@@ -72,7 +73,7 @@ function setCount(value: number) {
         <div class="purchase-row">
           <div>
             <span class="purchase-row__label">购买数量</span>
-            <small v-if="goods.limit">还可购买 {{ maxCount }} 份</small>
+            <small v-if="goods.limit">{{ limitLabel || '限购' }} · 还可购买 {{ maxCount }} 份</small>
           </div>
           <div class="stepper">
             <button type="button" title="减少" aria-label="减少" :disabled="pending || count <= 1" @click="setCount(count - 1)">
@@ -168,7 +169,7 @@ function setCount(value: number) {
   margin: 0;
   overflow: hidden;
   font-size: 17px;
-  font-weight: 700;
+  font-weight: var(--fw-700);
   line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -208,7 +209,7 @@ function setCount(value: number) {
   border-radius: 5px;
   color: var(--ui-danger);
   background: var(--ui-danger-soft);
-  font-weight: 600;
+  font-weight: var(--fw-600);
   line-height: 18px;
 }
 
@@ -240,7 +241,7 @@ function setCount(value: number) {
 .purchase-section-label {
   color: var(--ui-muted);
   font-size: 12px;
-  font-weight: 600;
+  font-weight: var(--fw-600);
 }
 
 .purchase-rewards {
@@ -300,7 +301,7 @@ function setCount(value: number) {
 
 .purchase-row__label {
   font-size: 13px;
-  font-weight: 600;
+  font-weight: var(--fw-600);
 }
 
 .purchase-row small {
@@ -365,7 +366,7 @@ function setCount(value: number) {
   color: var(--ui-ink);
   background: transparent;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: var(--fw-600);
   text-align: center;
   font-variant-numeric: tabular-nums;
 }

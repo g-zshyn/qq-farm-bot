@@ -55,6 +55,9 @@ function remaining(value: any) {
 function rewardsText(values: any[]) {
   return (values || []).map(v => `${v.name} ×${v.count}`).join('、')
 }
+function limitLabel(period: string) {
+  return ({ daily: '每日限购', weekly: '每周限购', monthly: '每月限购', permanent: '永久限购' } as Record<string, string>)[period] || '限购'
+}
 function fruitsOf(recipe: any) {
   return (state?.fruits || []).filter((v: any) => v.id === recipe.fruitId)
 }
@@ -352,8 +355,8 @@ onMounted(() => {
           <div class="item-row" :class="{ 'item-row--set': goods.rewards.length > 1 }">
             <span v-for="reward in goods.rewards" :key="reward.id" class="item-box" :title="reward.name"><CommerceItemImage :src="reward.image" :alt="reward.name" /><b>{{ reward.count }}</b></span>
           </div>
-          <small v-if="goods.remaining !== null">剩余 {{ goods.remaining }}</small>
-          <small v-for="condition in goods.conditions" :key="condition.type">需店铺等级 {{ condition.target }}（当前 {{ condition.current }}）</small>
+          <small v-if="goods.remaining !== null">{{ limitLabel(goods.limitPeriod) }} {{ goods.remaining }}/{{ goods.purchaseLimit }}</small>
+          <small v-for="condition in goods.conditions.filter((value: any) => !value.satisfied)" :key="condition.type">需店铺等级 {{ condition.target }}（当前 {{ condition.current }}）</small>
           <button class="primary price" :disabled="busy || !state.active || !goods.available" @click="select('exchange', goods.name || goods.rewards[0]?.name, { goodsId: goods.id }, goods.costs, goods.rewards, Math.min(9999, goods.remaining ?? 9999))">
             <template v-if="goods.remaining === 0">
               已售罄
@@ -497,11 +500,11 @@ p {
 }
 h2 {
   font-size: 18px;
-  font-weight: 900;
+  font-weight: var(--fw-900);
 }
 h3 {
   font-size: 15px;
-  font-weight: 800;
+  font-weight: var(--fw-800);
 }
 small {
   display: block;
@@ -549,7 +552,7 @@ button {
   box-shadow:
     inset 0 -3px 0 rgba(160, 110, 60, 0.18),
     0 3px 0 var(--wood-dark);
-  font-weight: 800;
+  font-weight: var(--fw-800);
   white-space: nowrap;
   cursor: pointer;
   transition: transform 0.08s ease;
@@ -638,7 +641,7 @@ input[type='checkbox'] {
   align-items: center;
   gap: 8px;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: var(--fw-700);
 }
 .actions {
   display: flex;
@@ -699,7 +702,7 @@ input[type='checkbox'] {
   gap: 12px;
   margin: 20px 0 10px;
   font-size: 15px;
-  font-weight: 900;
+  font-weight: var(--fw-900);
   text-align: center;
 }
 .divider::before,
@@ -786,7 +789,7 @@ input[type='checkbox'] {
   color: #fff3dc;
   background: rgba(58, 38, 24, 0.75);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: var(--fw-700);
   white-space: nowrap;
 }
 .employee-time {
@@ -898,7 +901,7 @@ input[type='checkbox'] {
 /* 名称统一单行，格子宽度随名称自适应，避免“有机化肥(1小时)”这类名称折行后高低不齐 */
 .item__name {
   font-size: 12px;
-  font-weight: 700;
+  font-weight: var(--fw-700);
   line-height: 1.35;
   text-align: center;
   white-space: nowrap;
@@ -927,7 +930,7 @@ input[type='checkbox'] {
   bottom: 1px;
   color: #fff;
   font-size: 13px;
-  font-weight: 900;
+  font-weight: var(--fw-900);
   font-variant-numeric: tabular-nums;
   text-shadow:
     1.5px 0 0 var(--wood-dark),
@@ -990,7 +993,7 @@ input[type='checkbox'] {
   margin-top: 2px;
   color: #f1e4cf;
   font-size: 11px;
-  font-weight: 700;
+  font-weight: var(--fw-700);
 }
 .signboard__main {
   min-width: 0;
@@ -1009,7 +1012,7 @@ input[type='checkbox'] {
   margin-top: 4px;
   color: #f1e4cf;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: var(--fw-700);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -1048,7 +1051,7 @@ input[type='checkbox'] {
   box-shadow: 0 0 0 2px #fff6e6;
   font-size: 11px;
   font-style: normal;
-  font-weight: 900;
+  font-weight: var(--fw-900);
   white-space: nowrap;
 }
 .revenue {
@@ -1070,7 +1073,7 @@ input[type='checkbox'] {
 }
 .revenue small {
   margin-top: 4px;
-  font-weight: 700;
+  font-weight: var(--fw-700);
   text-align: center;
 }
 
@@ -1121,7 +1124,7 @@ input[type='checkbox'] {
   color: #fff6e6;
   background: rgba(94, 58, 31, 0.78);
   font-size: 12px;
-  font-weight: 800;
+  font-weight: var(--fw-800);
 }
 .cup--locked {
   background: #e9dcc4;
@@ -1138,7 +1141,7 @@ input[type='checkbox'] {
   color: #fff3dc;
   background: var(--wood);
   font-size: 14px;
-  font-weight: 800;
+  font-weight: var(--fw-800);
 }
 
 /* 快捷入口 */
@@ -1207,7 +1210,7 @@ input[type='checkbox'] {
   color: #fff3dc;
   background: rgba(58, 38, 24, 0.78);
   font-size: 13px;
-  font-weight: 700;
+  font-weight: var(--fw-700);
 }
 .receipt__line {
   display: flex;
@@ -1244,7 +1247,7 @@ input[type='checkbox'] {
     inset 0 0 0 3px rgba(255, 255, 255, 0.4),
     0 5px 0 #4a3320;
   font-size: 24px;
-  font-weight: 900;
+  font-weight: var(--fw-900);
   letter-spacing: 0.06em;
 }
 .make__btn span {
@@ -1362,7 +1365,7 @@ input[type='checkbox'] {
   align-items: center;
   gap: 12px;
   font-size: 15px;
-  font-weight: 900;
+  font-weight: var(--fw-900);
   list-style: none;
   cursor: pointer;
 }
@@ -1392,7 +1395,7 @@ input[type='checkbox'] {
   color: #fff3dc;
   background: rgba(58, 38, 24, 0.78);
   font-size: 13px;
-  font-weight: 700;
+  font-weight: var(--fw-700);
 }
 
 /* 弹窗列表：一项一行。窄屏上下堆叠，宽弹窗横向展开成固定列，各行对齐 */

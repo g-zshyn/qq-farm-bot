@@ -799,6 +799,9 @@ async function handleApiCall(msg: any): Promise<void> {
             case 'getIllustratedSnapshot':
                 result = await require('../services/illustrated').getIllustratedSnapshot();
                 break;
+            case 'getCollectionsSnapshot':
+                result = await require('../services/collections').getCollectionsSnapshot();
+                break;
             case 'claimIllustratedRewards':
                 result = await require('../services/illustrated').claimIllustratedRewards(args[0]);
                 break;
@@ -1080,6 +1083,12 @@ async function handleApiCall(msg: any): Promise<void> {
                 break;
             case 'operateAutumnActivity':
                 result = await require('../services/autumn-activities').operateAutumnActivity(args[0], args[1], args[2]);
+                break;
+            case 'getPropsShop':
+                result = await require('../services/commerce').getPropsShop();
+                break;
+            case 'purchaseProps':
+                result = await require('../services/commerce').purchaseProps(args[0], args[1], args[2]);
                 break;
             case 'getMallCatalog':
                 result = await require('../services/commerce').getMallCatalog(args[0], args[1]);
