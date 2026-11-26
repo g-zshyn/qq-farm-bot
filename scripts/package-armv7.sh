@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 把仓库打包成可直接部署的生产目录（含编译产物、生产依赖、systemd 单元）
+# 把仓库打包成可直接部署的生产目录（含编译产物、workspace 依赖、systemd 单元）
 # 用法: bash scripts/package-armv7.sh
 # 输出: dist-pkg/qq-farm-bot-armv7-<version>.tar.gz
 set -euo pipefail
@@ -12,19 +12,39 @@ OUT="${OUT:-$ROOT/dist-pkg}"
 PKG="$OUT/qq-farm-bot"
 TARBALL="$OUT/qq-farm-bot-armv7-${VERSION}.tar.gz"
 
-[ -f core/client.js ] || { echo "缺少 core/client.js，请先执行 pnpm build" >&2; exit 1; }
-[ -d web/dist ]       || { echo "缺少 web/dist，请先执行 pnpm build" >&2; exit 1; }
+for f in core/client.js core/dist web/dist packages/session-contract/dist; do
+    [ -e "$f" ] || { echo "缺少 $f，请先执行 pnpm build" >&2; exit 1; }
+done
 
 rm -rf "$OUT"
-mkdir -p "$PKG/core/src/utils" "$PKG/web"
+mkdir -p "$PKG/core/src/utils" "$PKG/web" "$PKG/packages/session-contract"
 
-cp -a core/client.js core/dist core/package.json core/package-lock.json "$PKG/core/"
-cp -a core/src/gameConfig core/src/proto "$PKG/core/src/"
+# ---- 构建产物 ----
+cp -a core/client.js core/dist core/package.json "$PKG/core/"
+cp -a core/src/gameConfig core/src/proto core/src/activity-data "$PKG/core/src/"
 cp -a core/src/utils/tsdk.wasm core/src/utils/tsdk-wx.wasm "$PKG/core/src/utils/"
 cp -a web/dist "$PKG/web/dist"
 cp -a package.json "$PKG/package.json"
-mkdir -p "$PKG/core/data"
+cp -a packages/session-contract/package.json packages/session-contract/dist "$PKG/packages/session-contract/"
 
+# ---- 生产依赖：在临时 staging 里按 workspace 安装，避免污染工作区 ----
+STAGE=$(mktemp -d)
+cleanup() { rm -rf "$STAGE"; }
+trap cleanup EXIT
+
+mkdir -p "$STAGE/core" "$STAGE/web" "$STAGE/packages/session-contract"
+cp package.json pnpm-workspace.yaml pnpm-lock.yaml "$STAGE/"
+cp core/package.json "$STAGE/core/"
+cp web/package.json "$STAGE/web/"
+cp packages/session-contract/package.json "$STAGE/packages/session-contract/"
+
+echo "安装生产依赖（pnpm workspace）..."
+( cd "$STAGE" && pnpm --filter qq-farm-bot install --prod --frozen-lockfile --ignore-scripts >/dev/null )
+
+cp -a "$STAGE/node_modules" "$PKG/node_modules"
+cp -a "$STAGE/core/node_modules" "$PKG/core/node_modules"
+
+# ---- systemd 单元 + 安装脚本 ----
 cat > "$PKG/qq-farm-bot.service" <<'UNIT'
 [Unit]
 Description=QQ Farm Bot
@@ -65,11 +85,9 @@ echo "面板: http://$(hostname -I | awk '{print $1}'):3007"
 echo "日志: journalctl -u qq-farm-bot -f"
 INSTALL
 chmod +x "$PKG/install.sh"
+mkdir -p "$PKG/core/data"
 
-echo "安装生产依赖（npm ci）..."
-( cd "$PKG/core" && npm ci --omit=dev --no-audit --no-fund >/dev/null )
-
-if find "$PKG/core/node_modules" -name '*.node' | head -1 | grep -q .; then
+if find "$PKG" -name '*.node' | head -1 | grep -q .; then
     echo "产物中出现原生模块，无法跨架构运行" >&2
     exit 1
 fi
